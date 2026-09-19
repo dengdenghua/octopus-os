@@ -712,8 +712,8 @@ def _running_candidate(image_reference: str, docker: DockerJson) -> dict[str, An
                 or host.get("PidsLimit") != 32
                 or host.get("Memory") != 64 * 1024 * 1024
                 or not isinstance(tmpfs, dict)
-                or set(tmpfs) != {"/tmp"}
-                or not all(option in str(tmpfs["/tmp"]) for option in ("noexec", "nosuid", "nodev"))
+                or set(tmpfs) != {"/tmp"}  # nosec B108 - asserts the container mounts a tmpfs AT /tmp; no temp file is created
+                or not all(option in str(tmpfs["/tmp"]) for option in ("noexec", "nosuid", "nodev"))  # nosec B108 - required tmpfs mount options, compared as strings; no temp file is created
                 or mounts != []
                 or not isinstance(health, dict)
                 or health.get("Status") != "healthy"
@@ -1423,7 +1423,7 @@ def inspect_installation(
             if host_network
             else {
                 f"{port['container']}/{port['protocol']}": [
-                    {"HostIp": "0.0.0.0", "HostPort": str(port["host"])}
+                    {"HostIp": "0.0.0.0", "HostPort": str(port["host"])}  # nosec B104 - expected Docker port-binding shape used for comparison only; no socket is bound here
                 ]
                 for port in service.get("ports") or []
                 if isinstance(port, dict)
@@ -2695,7 +2695,7 @@ def _validate_service_evidence(
         if definition.get("networkMode") == "host"
         else {
             f"{port['container']}/{port['protocol']}": [
-                {"HostIp": "0.0.0.0", "HostPort": str(port["host"])}
+                {"HostIp": "0.0.0.0", "HostPort": str(port["host"])}  # nosec B104 - expected Docker port-binding shape used for comparison only; no socket is bound here
             ]
             for port in definition["ports"]
         }

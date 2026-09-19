@@ -23,7 +23,8 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
-from xml.etree import ElementTree
+
+from defusedxml.ElementTree import ParseError, fromstring, iterparse
 
 try:
     from deploy.appliance import operations_systemd as systemd
@@ -483,13 +484,11 @@ def _parse_windows_wsd_probe_match(
     try:
         namespaces = {
             prefix: uri
-            for _event, (prefix, uri) in ElementTree.iterparse(
-                io.BytesIO(raw), events=("start-ns",)
-            )
+            for _event, (prefix, uri) in iterparse(io.BytesIO(raw), events=("start-ns",))
         }
-        root = ElementTree.fromstring(raw)
+        root = fromstring(raw)
         peer = ipaddress.IPv4Address(peer_address)
-    except (ElementTree.ParseError, UnicodeError, ValueError):
+    except (ParseError, UnicodeError, ValueError):
         return None
     action = root.find(f".//{{{WSA_NAMESPACE}}}Action")
     relates_to = root.find(f".//{{{WSA_NAMESPACE}}}RelatesTo")
