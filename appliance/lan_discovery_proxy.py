@@ -147,7 +147,7 @@ def _rewrite_address(value: bytes, source: ipaddress.IPv4Address | None) -> byte
     if port is None or parsed.username is not None or parsed.password is not None:
         raise DiscoveryPacketError("direct announcement address is invalid")
     hostname = parsed.hostname
-    if hostname not in {None, "", "0.0.0.0", "::"}:
+    if hostname not in {None, "", "0.0.0.0", "::"}:  # nosec B104 - this rejects wildcard bind addresses; it never binds a socket
         return value
     if source is None:
         return value

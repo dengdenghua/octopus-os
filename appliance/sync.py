@@ -701,7 +701,7 @@ class DeviceSyncService:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT cursor, device_id, scope, asset_id, target_path, sha256, size, kind, created_at "
-                f"FROM events WHERE device_id=? AND cursor>? AND scope IN ({placeholders}) "
+                f"FROM events WHERE device_id=? AND cursor>? AND scope IN ({placeholders}) "  # nosec B608 - placeholders is ",".join("?" for _ in scopes); the scopes are bound parameters
                 "ORDER BY cursor LIMIT ?",
                 (device_id, cursor, *scopes, limit),
             ).fetchall()

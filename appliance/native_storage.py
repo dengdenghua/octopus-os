@@ -1761,7 +1761,7 @@ def _configure_shared_folder(path: Path, group_gid: int) -> None:
     descriptor = os.open(path, flags)
     try:
         os.fchown(descriptor, 0, group_gid)
-        os.fchmod(descriptor, 0o2770)
+        os.fchmod(descriptor, 0o2770)  # nosec B103 - setgid + 0770: group-scoped share directory, stricter than 0755 (no other/world access)
     finally:
         os.close(descriptor)
 

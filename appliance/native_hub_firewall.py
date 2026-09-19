@@ -89,7 +89,7 @@ def _validate_bindings(inspected: dict[str, Any], ports: tuple[Any, ...], mode: 
     if not isinstance(actual, dict):
         raise OSError("Hub container port bindings are unavailable")
     expected = {
-        f"{port.container}/{port.protocol}": [{"HostIp": "0.0.0.0", "HostPort": str(port.host)}]
+        f"{port.container}/{port.protocol}": [{"HostIp": "0.0.0.0", "HostPort": str(port.host)}]  # nosec B104 - expected Docker port-binding shape used for comparison only; no socket is bound here
         for port in ports
     }
     published = {key: value for key, value in actual.items() if value}

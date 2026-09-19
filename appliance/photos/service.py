@@ -749,7 +749,7 @@ class PhotoLibraryService:
                     placeholders = ",".join("?" for _ in batch)
                     rows = conn.execute(
                         "SELECT path, width, height, exif_time, file_type, location "
-                        f"FROM image_meta WHERE path IN ({placeholders})",
+                        f"FROM image_meta WHERE path IN ({placeholders})",  # nosec B608 - placeholders is ",".join("?" for _ in batch); the paths are bound parameters
                         tuple(batch),
                     ).fetchall()
                     for path, width, height, captured_at, file_type, location in rows:
@@ -873,26 +873,26 @@ class PhotoLibraryService:
                             continue
                         counts["indexed"] += int(
                             conn.execute(
-                                f"SELECT COUNT(*) FROM image_clip WHERE path IN ({placeholders})",
+                                f"SELECT COUNT(*) FROM image_clip WHERE path IN ({placeholders})",  # nosec B608 - placeholders is ",".join("?" for _ in batch); the paths are bound parameters
                                 tuple(batch),
                             ).fetchone()[0]
                         )
                         counts["faces"] += int(
                             conn.execute(
-                                f"SELECT COUNT(*) FROM image_faces WHERE path IN ({placeholders})",
+                                f"SELECT COUNT(*) FROM image_faces WHERE path IN ({placeholders})",  # nosec B608 - placeholders is ",".join("?" for _ in batch); the paths are bound parameters
                                 tuple(batch),
                             ).fetchone()[0]
                         )
                         counts["blurry"] += int(
                             conn.execute(
                                 "SELECT COUNT(*) FROM image_quality WHERE sharpness < ? "
-                                f"AND path IN ({placeholders})",
+                                f"AND path IN ({placeholders})",  # nosec B608 - placeholders is ",".join("?" for _ in batch); the paths are bound parameters
                                 (50.0, *batch),
                             ).fetchone()[0]
                         )
                         for (digest,) in conn.execute(
                             "SELECT dhash FROM image_hashes WHERE dhash != '' "
-                            f"AND path IN ({placeholders})",
+                            f"AND path IN ({placeholders})",  # nosec B608 - placeholders is ",".join("?" for _ in batch); the paths are bound parameters
                             tuple(batch),
                         ):
                             value = str(digest)
@@ -938,7 +938,7 @@ class PhotoLibraryService:
                     for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
                 }
                 return sum(
-                    conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # nosec B608 - {table} is filtered by `if table in tables`, where tables comes from sqlite_master
                     for table in _IMAGE_RECORD_TABLES
                     if table in tables
                 )

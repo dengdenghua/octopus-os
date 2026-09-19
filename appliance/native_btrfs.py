@@ -489,7 +489,7 @@ def apply_btrfs_raid1(
         try:
             mountpoint.mkdir(mode=0o755)
             mountpoint_created = True
-            os.chmod(mountpoint, 0o755)
+            os.chmod(mountpoint, 0o755)  # nosec B103 - mountpoint is chowned to root:root on the next line; it must stay traversable
             if os.name == "posix":
                 os.chown(mountpoint, 0, 0)
             filesystem_started = True
