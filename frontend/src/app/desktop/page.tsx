@@ -19,6 +19,8 @@ import { availableDesktopWorkbenchApps } from "@/core/workbench/desktop-apps";
 import { useModuleAvailabilitySnapshot } from "@/core/modules/enabled-modules";
 import { useWorkbenchAvailabilitySync } from "@/core/workbench/availability";
 import { SystemModelStatus } from "@/appliance/system-model-status";
+import { AiNetworkPulse } from "@/appliance/ai-network-pulse";
+import { IntentDesktopSurface } from "@/appliance/intent-desktop-surface";
 import { LocalDatabaseApp } from "@/appliance/local-database-app";
 import {
   useCallback,
@@ -1981,9 +1983,17 @@ export default function DesktopShellPage() {
       <section className="relative z-10 flex h-full min-h-0 flex-col">
         <MacMenuBar
           modelStatus={
-            <SystemModelStatus
-              onOpenSettings={() => openSystemAgentSettings("models")}
-            />
+            <div className="flex items-center gap-2">
+              <AiNetworkPulse
+                onOpenWorkbench={() =>
+                  openApp(DESKTOP_WORKBENCH_APP, taskWorkspaceRoute({}))
+                }
+                onOpenSettings={() => openSystemAgentSettings("models")}
+              />
+              <SystemModelStatus
+                onOpenSettings={() => openSystemAgentSettings("models")}
+              />
+            </div>
           }
           activeApp={menuBarActiveApp}
           controlCenterOpen={controlCenterOpen}
@@ -2006,35 +2016,45 @@ export default function DesktopShellPage() {
           notificationCount={nativeNotifications.length}
         />
         <div className="relative min-h-0 flex-1 pt-[25px]">
-          <DesktopStartGuide
-            identity={user?.actor_id || user?.user_id || "local"}
-            completedTasks={taskProjection?.counts.completed ?? 0}
-            onStorage={() => openSystemSettingsSection("sharing")}
-            onModel={() => openSystemAgentSettings("models")}
-            onPermissions={() => openSystemAgentSettings("automationSecurity")}
-            onStart={(prompt) =>
+          <IntentDesktopSurface
+            onOpenWorkbench={(prompt) =>
               openApp(DESKTOP_WORKBENCH_APP, taskWorkspaceRoute({ prompt }))
             }
-            onResults={() => setTaskSpaceOpen(true)}
-            onDatabase={() => {
-              const app = visibleDesktopApps.find((entry) =>
-                isLocalDatabaseRoute(entry.route),
-              );
+            onOpenApp={(appId) => {
+              const app = visibleDesktopApps.find((entry) => entry.route === appId);
               if (app) openApp(app);
             }}
-            onApps={openAppStore}
           >
-            <MacDesktopWidgets
-              agentHealth={agentDesktopHealth}
-              onOpenWorkspace={() => openApp(DESKTOP_WORKBENCH_APP)}
-              onOpenNotifications={toggleNotifications}
-            />
-          </DesktopStartGuide>
-          <div className="mac-desktop-icons">
-            {desktopShortcuts.map((app) => (
-              <MacDesktopIcon key={app.id} app={app} />
-            ))}
-          </div>
+            <DesktopStartGuide
+              identity={user?.actor_id || user?.user_id || "local"}
+              completedTasks={taskProjection?.counts.completed ?? 0}
+              onStorage={() => openSystemSettingsSection("sharing")}
+              onModel={() => openSystemAgentSettings("models")}
+              onPermissions={() => openSystemAgentSettings("automationSecurity")}
+              onStart={(prompt) =>
+                openApp(DESKTOP_WORKBENCH_APP, taskWorkspaceRoute({ prompt }))
+              }
+              onResults={() => setTaskSpaceOpen(true)}
+              onDatabase={() => {
+                const app = visibleDesktopApps.find((entry) =>
+                  isLocalDatabaseRoute(entry.route),
+                );
+                if (app) openApp(app);
+              }}
+              onApps={openAppStore}
+            >
+              <MacDesktopWidgets
+                agentHealth={agentDesktopHealth}
+                onOpenWorkspace={() => openApp(DESKTOP_WORKBENCH_APP)}
+                onOpenNotifications={toggleNotifications}
+              />
+            </DesktopStartGuide>
+            <div className="mac-desktop-icons">
+              {desktopShortcuts.map((app) => (
+                <MacDesktopIcon key={app.id} app={app} />
+              ))}
+            </div>
+          </IntentDesktopSurface>
         </div>
 
         {window.echo?.desktop && (
