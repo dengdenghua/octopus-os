@@ -60,6 +60,43 @@ def test_extension_passes_one_authenticator_to_routes_instead_of_raw_jwt() -> No
     assert observed == router_calls
 
 
+# 旧的 OMV RPC 后端(Web 路由层)已在「零残留」Phase 1 删除;
+# /api/appliance/omv/* 与 /api/appliance/storage/* 由原生面同构提供(见
+# appliance/extension.py:create_omv_alias_router)。这些模块名回归即等于
+# 重新引入功能重复的死代码。见 docs/OMV_ZERO_RESIDUE_ROADMAP.md。
+#
+# 注意:omv_bridge* 主机桥族群(omv_bridge / omv_bridge_accounts / ... /
+# omv_bridge_sharing)刻意保留 —— 它们是 deploy/omv/ 仍打包、并以
+# `python3 -m appliance.omv_bridge` 在 x86 宿主机运行的主机桥守护进程,
+# 属于路线图 Phase 3(deploy/omv/ 清理)范围,不属于 Phase 1 的死 Web 路由层。
+_OMV_BACKEND_DEAD_ROUTER_MODULES = (
+    "omv_router",
+    "omv_client",
+    "omv_account_routes",
+    "omv_quota_routes",
+    "omv_read_routes",
+    "omv_sharing_routes",
+    "omv_health",
+    "omv_response",
+    "omv_route_context",
+)
+
+
+def test_omv_rpc_backend_cluster_stays_deleted() -> None:
+    """零残留防腐:旧 OMV RPC 后端模块不得回归。
+
+    原生面(native_storage_routes)已同构提供 /api/appliance/omv/* 与
+    /api/appliance/storage/*,故这些模块一旦回归即等于把死代码重新引入。
+    omv_protocol/omv_models 是仍被 native_* 复用的纯 schema 契约,Phase 2
+    去命名残留前暂不在此列。
+    """
+    appliance_dir = Path("appliance")
+    leftovers = sorted(
+        name for name in _OMV_BACKEND_DEAD_ROUTER_MODULES if (appliance_dir / f"{name}.py").exists()
+    )
+    assert leftovers == [], f"OMV RPC 后端死路由层回归: {leftovers}"
+
+
 def _routes(app: FastAPI) -> list[str]:
     paths: list[str] = []
     for route in app.router.routes:
