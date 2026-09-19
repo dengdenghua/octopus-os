@@ -17,6 +17,10 @@ env/
 
 # Tooling
 .pytest_cache/
+# pytest --basetemp scratch dir. Keep it OUTSIDE the repo for real runs:
+# a basetemp under the project root makes project_root() resolve to the repo
+# and cwd-relative data dirs silently land in the checkout.
+.pytest-tmp/
 .coverage
 .coverage.*
 htmlcov/
@@ -59,6 +63,12 @@ test-results/
 .echo/*.bak
 .echo/*.lock
 .echo/archive/
+
+# WorkBuddy agent workspace: per-session reports and curated memory notes live
+# here. They describe work in progress, not shipped source, so they stay local
+# the same way .codex/ and .qoder/ do.
+.workbuddy/
+agents/**/agent-core/.soul_history/
 
 # Versioned test/benchmark fixtures required by fresh-clone validation.
 !benchmarks/fixtures/security.denied-destructive-action/data.db
