@@ -65,6 +65,25 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
+// jsdom 的 Blob 提供 arrayBuffer/text/bytes/slice，却没有 stream()。undici 的
+// Response 在把 Blob 当作 body 时会调用 blob.stream()，于是
+// `new Response(new Blob([...]))` 抛 "object.stream is not a function"；
+// 同为 body 的字符串则正常，所以缺陷只在构造 Blob body 时暴露。
+// 浏览器与 Node 原生 Blob 都自带 stream，这里按同一语义补全：整个 blob 作为
+// 单个 chunk 推出。放在 setup 而非逐个改用例，是为了让后续新测试不再踩同一个坑。
+if (typeof Blob.prototype.stream !== "function") {
+  Blob.prototype.stream = function stream(
+    this: Blob,
+  ): ReadableStream<Uint8Array> {
+    return new ReadableStream<Uint8Array>({
+      start: async (controller) => {
+        controller.enqueue(new Uint8Array(await this.arrayBuffer()));
+        controller.close();
+      },
+    });
+  };
+}
+
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
   return {
