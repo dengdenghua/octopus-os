@@ -301,6 +301,10 @@ def test_bundled_storage_provisioning_lab_runs_with_sibling_dependencies(
         "storage_recovery_lab.py",
         "operations_systemd.py",
         "operations_systemd_lab.py",
+        # `operations_systemd.py` imports this sibling at module level, so a
+        # standalone extraction is only runnable when it is present.  The
+        # bundle itself ships it; the extraction list must track it too.
+        "external_storage.py",
     ):
         (extracted / name).write_bytes(files[name][0])
     completed = subprocess.run(
@@ -325,8 +329,12 @@ def test_bundled_btrfs_provisioning_lab_has_sibling_dependencies_and_runs_standa
     extracted.mkdir()
     for name in (
         "btrfs_provisioning_lab.py",
-        "operations_systemd.py",
         "storage_provisioning_lab.py",
+        "storage_recovery_lab.py",
+        "operations_systemd.py",
+        "operations_systemd_lab.py",
+        # Transitive sibling dependency of `operations_systemd.py`.
+        "external_storage.py",
     ):
         (extracted / name).write_bytes(files[name][0])
     completed = subprocess.run(
@@ -355,6 +363,8 @@ def test_bundled_mdraid_replacement_lab_runs_with_sibling_dependencies(
         "storage_recovery_lab.py",
         "operations_systemd.py",
         "operations_systemd_lab.py",
+        # Transitive sibling dependency of `operations_systemd.py`.
+        "external_storage.py",
     ):
         (extracted / name).write_bytes(files[name][0])
     completed = subprocess.run(
