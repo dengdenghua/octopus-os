@@ -18,9 +18,13 @@ import { workbenchRoute } from "@/core/router/desktop-workspace-route";
 import { availableDesktopWorkbenchApps } from "@/core/workbench/desktop-apps";
 import { useModuleAvailabilitySnapshot } from "@/core/modules/enabled-modules";
 import { useWorkbenchAvailabilitySync } from "@/core/workbench/availability";
-import { SystemModelStatus } from "@/appliance/system-model-status";
 import { AiNetworkPulse } from "@/appliance/ai-network-pulse";
-import { IntentDesktopSurface } from "@/appliance/intent-desktop-surface";
+import {
+  IntentDesktopSurface,
+  OPEN_ROOMS,
+  type DesktopMode,
+  type OpenRoomType,
+} from "@/appliance/intent-desktop-surface";
 import { LocalDatabaseApp } from "@/appliance/local-database-app";
 import {
   useCallback,
@@ -28,7 +32,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -66,10 +69,6 @@ import type {
   NativeDesktopItem,
   NativeNotification,
   NativeWindow,
-  SystemActionCapabilities,
-  SystemControlState,
-  SystemUpdateCapabilities,
-  SystemUpdateStatus,
 } from "@/types/electron";
 import {
   applianceAppsForDock,
@@ -84,17 +83,11 @@ import {
 import { Dock, DockItem } from "@/appliance/dock";
 import { MacLiquidGlassOptics } from "@/appliance/liquid-glass-optics";
 import { MacLiquidGlassWebGL } from "@/appliance/liquid-glass-webgl";
-import { calculateLiquidGlassMotion } from "@/appliance/liquid-glass-motion";
+import { useDesktopAppearance } from "@/appliance/use-desktop-appearance";
+import { useLiquidGlassPointer } from "@/appliance/use-liquid-glass-pointer";
+import { useSystemControls } from "@/appliance/use-system-controls";
+import { useSystemUpdates } from "@/appliance/use-system-updates";
 import { MacNativeLiquidGlass } from "@/appliance/native-liquid-glass";
-import {
-  DEFAULT_LIQUID_GLASS_TUNING,
-  isDefaultLiquidGlassTuning,
-  LIQUID_GLASS_TUNING_STORAGE_KEY,
-  liquidGlassCssVariables,
-  normalizeLiquidGlassTuning,
-  parseLiquidGlassTuning,
-  type LiquidGlassTuning,
-} from "@/appliance/liquid-glass-settings";
 import {
   findNativeFileManagerApp,
   findNativeSystemSettingsApp,
@@ -147,11 +140,8 @@ import {
   MacNotificationCenter,
   MacSpotlight,
   MacSystemActionDialog,
+  MacWorkspaceDropdown,
   type MacShellApp,
-  type MacLiquidGlassIntensity,
-  type MacLiquidGlassStyle,
-  type MacSystemAction,
-  type MacSystemCapabilities,
 } from "@/appliance/macos-shell";
 
 type DesktopApp = {
@@ -305,15 +295,6 @@ const ARCHIVE_FOLDER_MAP: Record<string, string> = {
   other: "其他",
 };
 
-const NO_SYSTEM_CAPABILITIES: SystemActionCapabilities = {
-  nativeShell: false,
-  lock: false,
-  logout: false,
-  suspend: false,
-  restart: false,
-  shutdown: false,
-};
-
 // Echo OS 原生路线:桌面即系统主页 —— 默认进入、不透明、自带壁纸+启动器。
 // 母体 echo-agent 走寄生路线(透明叠加真实桌面的整理工具,类比腾讯/360
 // 桌面助手),那里此常量为 false:保留 opt-in 门、desktop-overlay 透明类与
@@ -366,29 +347,6 @@ export default function DesktopShellPage() {
   const [notificationServiceAvailable, setNotificationServiceAvailable] =
     useState(false);
   const [liquidGlassOpen, setLiquidGlassOpen] = useState(false);
-  const [liquidGlassStyle, setLiquidGlassStyle] = useState<MacLiquidGlassStyle>(
-    () => {
-      if (typeof window === "undefined") return "crystal";
-      const saved = localStorage.getItem("echo:liquid-glass-style");
-      return saved === "softlight" || saved === "harmony"
-        ? "softlight"
-        : "crystal";
-    },
-  );
-  const [liquidGlassIntensity, setLiquidGlassIntensity] =
-    useState<MacLiquidGlassIntensity>(() => {
-      if (typeof window === "undefined") return "balanced";
-      const saved = localStorage.getItem("echo:liquid-glass-intensity");
-      return saved === "weak" || saved === "strong" ? saved : "balanced";
-    });
-  const [liquidGlassTuning, setLiquidGlassTuning] = useState<LiquidGlassTuning>(
-    () => {
-      if (typeof window === "undefined") return DEFAULT_LIQUID_GLASS_TUNING;
-      return parseLiquidGlassTuning(
-        localStorage.getItem(LIQUID_GLASS_TUNING_STORAGE_KEY),
-      );
-    },
-  );
   const [aboutOpen, setAboutOpen] = useState(false);
   const [accountSecurityOpen, setAccountSecurityOpen] = useState(false);
   const [accountSecuritySection, setAccountSecuritySection] =
@@ -396,21 +354,6 @@ export default function DesktopShellPage() {
   const [agentSettingsSection, setAgentSettingsSection] =
     useState<OsAgentSettingsSection>("models");
   const [taskSpaceOpen, setTaskSpaceOpen] = useState(false);
-  const [systemCapabilities, setSystemCapabilities] =
-    useState<SystemActionCapabilities>(NO_SYSTEM_CAPABILITIES);
-  const [systemControls, setSystemControls] =
-    useState<SystemControlState | null>(null);
-  const [systemUpdateCapabilities, setSystemUpdateCapabilities] =
-    useState<SystemUpdateCapabilities | null>(null);
-  const [systemUpdateStatus, setSystemUpdateStatus] =
-    useState<SystemUpdateStatus | null>(null);
-  const [systemUpdateBusy, setSystemUpdateBusy] = useState(false);
-  const [pendingSystemAction, setPendingSystemAction] =
-    useState<MacSystemAction | null>(null);
-  const [systemActionBusy, setSystemActionBusy] = useState(false);
-  const [systemActionError, setSystemActionError] = useState<string | null>(
-    null,
-  );
   const [desktopMenu, setDesktopMenu] = useState<{
     x: number;
     y: number;
@@ -421,21 +364,6 @@ export default function DesktopShellPage() {
     appName: string;
     window: NativeWindow;
   } | null>(null);
-  const [wallpaperVariant, setWallpaperVariant] = useState<
-    "orbit" | "aurora" | "sunset" | "midnight"
-  >(() => {
-    if (typeof window === "undefined") return "orbit";
-    const saved = localStorage.getItem("echo:desktop-wallpaper");
-    if (saved === "tahoe") return "orbit";
-    if (saved === "sequoia") return "aurora";
-    if (saved === "sonoma") return "sunset";
-    return saved === "orbit" ||
-      saved === "aurora" ||
-      saved === "sunset" ||
-      saved === "midnight"
-      ? saved
-      : "orbit";
-  });
   const [nativeDesktopItems, setNativeDesktopItems] = useState<
     NativeDesktopItem[]
   >([]);
@@ -464,17 +392,6 @@ export default function DesktopShellPage() {
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const mousePassthroughRef = useRef(false);
-  const liquidPointerFrameRef = useRef<number | null>(null);
-  const liquidMotionResetTimerRef = useRef<number | null>(null);
-  const liquidPointerRef = useRef({
-    x: 50,
-    y: 30,
-    clientX: 0,
-    clientY: 0,
-  });
-  const liquidMotionSampleRef = useRef({ x: 0, y: 0, time: 0 });
-  const liquidSurfaceRef = useRef<HTMLElement | null>(null);
-  const activeLiquidSurfaceRef = useRef<HTMLElement | null>(null);
 
   const debouncedSearch = useDebounce(desktopSearch, 200);
 
@@ -545,6 +462,26 @@ export default function DesktopShellPage() {
     path: string;
     selectedPath?: string;
   } | null>(null);
+  const [desktopMode, setDesktopMode] = useState<DesktopMode>("workspace");
+  const [desktopActiveRoom, setDesktopActiveRoom] = useState<OpenRoomType>("all");
+  const {
+    theme: desktopTheme,
+    setTheme: handleSelectDesktopTheme,
+    toggleTheme: handleToggleDesktopTheme,
+    liquidGlassStyle,
+    liquidGlassIntensity,
+    liquidGlassTuning,
+    setLiquidGlassStyle,
+    setLiquidGlassIntensity,
+    patchLiquidGlassTuning,
+    wallpaper,
+    setWallpaper,
+    cycleWallpaper: cycleWallpaperAppearance,
+    resetLiquidGlass,
+    liquidGlassVariables,
+    liquidGlassUsesNativeDefaults,
+  } = useDesktopAppearance();
+  const liquidGlassPointer = useLiquidGlassPointer();
   useDesktopAction(applianceAuthed === true, (action) => {
     if (action.type === "photos.search" || action.type === "photos.reveal") {
       setPhotoSearchRequest({
@@ -594,57 +531,13 @@ export default function DesktopShellPage() {
     setLiquidGlassOpen(false);
     setNotificationsOpen((value) => !value);
   };
-  const toggleLiquidGlass = () => {
+  // 打开流光玻璃面板前先收起其他浮层，避免出现多层浮层叠加。
+  const openLiquidGlass = () => {
     setControlCenterOpen(false);
     setNotificationsOpen(false);
     setSpotlightOpen(false);
-    setLiquidGlassOpen((value) => !value);
+    setLiquidGlassOpen(true);
   };
-  const updateLiquidGlassStyle = (style: MacLiquidGlassStyle) => {
-    setLiquidGlassStyle(style);
-    localStorage.setItem("echo:liquid-glass-style", style);
-  };
-  const updateLiquidGlassIntensity = (intensity: MacLiquidGlassIntensity) => {
-    setLiquidGlassIntensity(intensity);
-    localStorage.setItem("echo:liquid-glass-intensity", intensity);
-  };
-  const updateLiquidGlassTuning = (patch: Partial<LiquidGlassTuning>) => {
-    setLiquidGlassTuning((current) => {
-      const next = normalizeLiquidGlassTuning({ ...current, ...patch });
-      localStorage.setItem(
-        LIQUID_GLASS_TUNING_STORAGE_KEY,
-        JSON.stringify(next),
-      );
-      return next;
-    });
-  };
-  const resetLiquidGlassTuning = () => {
-    setLiquidGlassStyle("crystal");
-    setLiquidGlassIntensity("balanced");
-    setLiquidGlassTuning(DEFAULT_LIQUID_GLASS_TUNING);
-    localStorage.removeItem("echo:liquid-glass-style");
-    localStorage.removeItem("echo:liquid-glass-intensity");
-    localStorage.removeItem(LIQUID_GLASS_TUNING_STORAGE_KEY);
-  };
-
-  const liquidGlassVariables = useMemo(
-    () => liquidGlassCssVariables(liquidGlassTuning) as CSSProperties,
-    [liquidGlassTuning],
-  );
-  const liquidGlassUsesNativeDefaults =
-    isDefaultLiquidGlassTuning(liquidGlassTuning);
-
-  useEffect(
-    () => () => {
-      if (liquidPointerFrameRef.current !== null) {
-        window.cancelAnimationFrame(liquidPointerFrameRef.current);
-      }
-      if (liquidMotionResetTimerRef.current !== null) {
-        window.clearTimeout(liquidMotionResetTimerRef.current);
-      }
-    },
-    [],
-  );
   const openSystemSettingsSection = (section: AccountSecuritySection) => {
     if (!isDeviceOperator) {
       toast.info("家庭成员不能修改设备级设置");
@@ -796,101 +689,38 @@ export default function DesktopShellPage() {
     setApplianceAuthed(isAuthenticated);
   }, [applianceAuthRequired, authLoading, isAuthenticated]);
 
-  const refreshSystemControls = useCallback(async () => {
-    const controls = window.echo?.systemControls;
-    if (!controls) return;
-    try {
-      setSystemControls(await controls.getState());
-    } catch (error) {
-      console.warn("[echo] native system-control refresh failed", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!window.echo?.systemControls) return;
-    void refreshSystemControls();
-    const timer = window.setInterval(() => {
-      void refreshSystemControls();
-    }, 30_000);
-    return () => window.clearInterval(timer);
-  }, [refreshSystemControls]);
-
-  const refreshSystemUpdate = useCallback(async () => {
-    const updates = window.echo?.updates;
-    if (!updates) {
-      setSystemUpdateCapabilities({
-        nativeShell: false,
-        status: false,
-        apply: false,
-        reason: "system updates require the native Linux session shell",
-      });
-      setSystemUpdateStatus({
-        schema: 1,
-        state: "unavailable",
-        error: "请在 Echo OS 原生 Linux 桌面中查看系统更新。",
-      });
-      return;
-    }
-    try {
-      const [capabilities, status] = await Promise.all([
-        updates.getCapabilities(),
-        updates.getStatus(),
-      ]);
-      setSystemUpdateCapabilities(capabilities);
-      setSystemUpdateStatus(status);
-    } catch (error) {
-      setSystemUpdateStatus({
-        schema: 1,
-        state: "unavailable",
-        error: error instanceof Error ? error.message : "系统更新状态读取失败",
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    const updateSurfaceOpen =
-      aboutOpen ||
-      (accountSecurityOpen && accountSecuritySection === "general");
-    if (!updateSurfaceOpen) return;
-    void refreshSystemUpdate();
-    if (
-      !systemUpdateBusy &&
-      systemUpdateStatus?.state !== "checking" &&
-      systemUpdateStatus?.state !== "installing"
-    ) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      void refreshSystemUpdate();
-    }, 1_000);
-    return () => window.clearInterval(timer);
-  }, [
-    aboutOpen,
-    accountSecurityOpen,
-    accountSecuritySection,
-    refreshSystemUpdate,
-    systemUpdateBusy,
-    systemUpdateStatus?.state,
-  ]);
-
-  const applySystemUpdate = async () => {
-    const updates = window.echo?.updates;
-    if (!updates || systemUpdateBusy) return;
-    setSystemUpdateBusy(true);
-    try {
-      const result = await updates.apply();
-      if (!result.ok) {
-        if (!result.cancelled) toast.error(result.error || "系统更新安装失败");
-        return;
-      }
-      toast.success("系统更新已写入备用槽，重新启动后生效");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "系统更新安装失败");
-    } finally {
-      await refreshSystemUpdate();
-      setSystemUpdateBusy(false);
-    }
-  };
+  const {
+    systemControls,
+    availableSystemActions,
+    pendingSystemAction,
+    systemActionBusy,
+    systemActionError,
+    applySystemControl,
+    lockScreen,
+    requestSystemAction,
+    cancelSystemAction,
+    confirmSystemAction,
+  } = useSystemControls({
+    closeTransientPanels: () => {
+      setSpotlightOpen(false);
+      setLaunchpadOpen(false);
+      setControlCenterOpen(false);
+      setNotificationsOpen(false);
+      setAboutOpen(false);
+      setAccountSecurityOpen(false);
+      setTaskSpaceOpen(false);
+    },
+  });
+  const {
+    capabilities: systemUpdateCapabilities,
+    status: systemUpdateStatus,
+    busy: systemUpdateBusy,
+    refresh: refreshSystemUpdate,
+    apply: applySystemUpdate,
+  } = useSystemUpdates({
+    surfaceOpen:
+      aboutOpen || (accountSecurityOpen && accountSecuritySection === "general"),
+  });
 
   const refreshNativeNotifications = useCallback(async () => {
     const notifications = window.echo?.notifications;
@@ -951,39 +781,6 @@ export default function DesktopShellPage() {
     setNativeNotifications([]);
   };
 
-  const applySystemControl = async (
-    label: string,
-    operation: () => Promise<{ ok: boolean; error?: string }>,
-  ) => {
-    try {
-      const result = await operation();
-      if (!result.ok) {
-        toast.error(result.error || `${label}设置失败`);
-        return;
-      }
-      await refreshSystemControls();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : `${label}设置失败`);
-    }
-  };
-
-  useEffect(() => {
-    let alive = true;
-    const system = window.echo?.system;
-    if (!system) return;
-    system
-      .getCapabilities()
-      .then((capabilities) => {
-        if (alive) setSystemCapabilities(capabilities);
-      })
-      .catch(() => {
-        if (alive) setSystemCapabilities(NO_SYSTEM_CAPABILITIES);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   useEffect(() => {
     const onSystemShortcut = (event: globalThis.KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.code === "Space") {
@@ -995,25 +792,10 @@ export default function DesktopShellPage() {
       if (
         event.ctrlKey &&
         (event.metaKey || event.altKey) &&
-        event.code === "KeyQ" &&
-        systemCapabilities.lock
+        event.code === "KeyQ"
       ) {
         event.preventDefault();
-        const system = window.echo?.system;
-        if (!system) {
-          toast.error("当前不是 Echo OS 原生系统会话");
-          return;
-        }
-        void system
-          .runAction("lock")
-          .then((result) => {
-            if (!result.ok) toast.error(result.error || "系统锁屏失败");
-          })
-          .catch((error: unknown) => {
-            toast.error(
-              error instanceof Error ? error.message : "系统锁屏失败",
-            );
-          });
+        void lockScreen();
         return;
       }
       if (event.key !== "Escape") return;
@@ -1027,7 +809,7 @@ export default function DesktopShellPage() {
     };
     window.addEventListener("keydown", onSystemShortcut);
     return () => window.removeEventListener("keydown", onSystemShortcut);
-  }, [spotlightOpen, systemCapabilities.lock]);
+  }, [spotlightOpen, lockScreen]);
 
   const openApp = (app: DesktopApp, routeOverride?: string) => {
     const registeredApp = findWorkbenchApp(app.route);
@@ -1489,23 +1271,8 @@ export default function DesktopShellPage() {
     return () => document.removeEventListener("click", onClick);
   }, []);
 
-  const updateWallpaper = (
-    next: "orbit" | "aurora" | "sunset" | "midnight",
-  ) => {
-    setWallpaperVariant(next);
-    localStorage.setItem("echo:desktop-wallpaper", next);
-  };
-
   const cycleWallpaper = () => {
-    const next =
-      wallpaperVariant === "orbit"
-        ? "aurora"
-        : wallpaperVariant === "aurora"
-          ? "sunset"
-          : wallpaperVariant === "sunset"
-            ? "midnight"
-            : "orbit";
-    updateWallpaper(next);
+    cycleWallpaperAppearance();
     setDesktopMenu(null);
   };
 
@@ -1605,7 +1372,7 @@ export default function DesktopShellPage() {
   };
 
   const handleContextMenuAction = async (
-    action: "open" | "archive" | "delete",
+    action: "open" | "archive",
     item: NativeDesktopItem,
   ) => {
     setContextMenu(null);
@@ -1620,8 +1387,6 @@ export default function DesktopShellPage() {
       }
       const folderName = ARCHIVE_FOLDER_MAP[category];
       if (folderName) await archiveDesktopFile(item.path, folderName);
-    } else if (action === "delete") {
-      toast.info("删除功能暂未实现");
     }
   };
 
@@ -1641,78 +1406,6 @@ export default function DesktopShellPage() {
     }
     setSpotlightOpen(false);
     navigate(`/browser?q=${encodeURIComponent(query.trim())}`);
-  };
-
-  const availableSystemActions: MacSystemCapabilities = {
-    lock: systemCapabilities.lock,
-    logout: systemCapabilities.logout,
-    suspend: systemCapabilities.suspend,
-    restart: systemCapabilities.restart,
-    shutdown: systemCapabilities.shutdown,
-  };
-
-  const closeTransientPanels = () => {
-    setSpotlightOpen(false);
-    setLaunchpadOpen(false);
-    setControlCenterOpen(false);
-    setNotificationsOpen(false);
-    setAboutOpen(false);
-    setAccountSecurityOpen(false);
-    setTaskSpaceOpen(false);
-  };
-
-  const lockScreen = async () => {
-    if (!availableSystemActions.lock) return;
-    closeTransientPanels();
-    const system = window.echo?.system;
-    if (!system) {
-      toast.error("当前不是 Echo OS 原生系统会话");
-      return;
-    }
-    try {
-      const result = await system.runAction("lock");
-      if (!result.ok) toast.error(result.error || "系统锁屏失败");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "系统锁屏失败");
-    }
-  };
-
-  const requestSystemAction = (action: MacSystemAction) => {
-    if (!availableSystemActions[action]) return;
-    closeTransientPanels();
-    setSystemActionError(null);
-    setPendingSystemAction(action);
-  };
-
-  const cancelSystemAction = () => {
-    if (systemActionBusy) return;
-    setPendingSystemAction(null);
-    setSystemActionError(null);
-  };
-
-  const confirmSystemAction = async () => {
-    if (!pendingSystemAction || systemActionBusy) return;
-    const system = window.echo?.system;
-    if (!system) {
-      setSystemActionError("当前不是 Echo OS 原生系统会话");
-      return;
-    }
-    setSystemActionBusy(true);
-    setSystemActionError(null);
-    try {
-      const result = await system.runAction(pendingSystemAction);
-      if (!result.ok) {
-        setSystemActionError(result.error || "系统动作执行失败");
-        return;
-      }
-      setPendingSystemAction(null);
-    } catch (error) {
-      setSystemActionError(
-        error instanceof Error ? error.message : "系统动作执行失败",
-      );
-    } finally {
-      setSystemActionBusy(false);
-    }
   };
 
   const retryDesktopAuth = () => {
@@ -1788,7 +1481,7 @@ export default function DesktopShellPage() {
       aria-label="Echo OS 桌面"
       className={cn(
         "macos-desktop-root relative h-screen overflow-hidden bg-transparent text-white",
-        `mac-wallpaper-${wallpaperVariant}`,
+        `mac-wallpaper-${wallpaper}`,
         `mac-liquid-${liquidGlassStyle}`,
       )}
       style={liquidGlassVariables}
@@ -1803,151 +1496,7 @@ export default function DesktopShellPage() {
       data-liquid-saturation={liquidGlassTuning.saturation}
       data-liquid-tint={liquidGlassTuning.tint}
       data-liquid-tint-strength={liquidGlassTuning.tintStrength}
-      onPointerMove={(event) => {
-        const now = event.timeStamp || performance.now();
-        const previousMotionSample = liquidMotionSampleRef.current;
-        const motion = calculateLiquidGlassMotion(
-          event.clientX - previousMotionSample.x,
-          event.clientY - previousMotionSample.y,
-          previousMotionSample.time > 0 ? now - previousMotionSample.time : 0,
-        );
-        liquidMotionSampleRef.current = {
-          x: event.clientX,
-          y: event.clientY,
-          time: now,
-        };
-        liquidPointerRef.current = {
-          x: (event.clientX / window.innerWidth) * 100,
-          y: (event.clientY / window.innerHeight) * 100,
-          clientX: event.clientX,
-          clientY: event.clientY,
-        };
-        liquidSurfaceRef.current =
-          event.target instanceof Element
-            ? event.target.closest<HTMLElement>("[data-liquid-surface]")
-            : null;
-        if (liquidPointerFrameRef.current !== null) return;
-        const root = event.currentTarget;
-        liquidPointerFrameRef.current = window.requestAnimationFrame(() => {
-          const surface = liquidSurfaceRef.current;
-          const hasInteractiveGlass = !!(
-            surface || activeLiquidSurfaceRef.current
-          );
-          if (hasInteractiveGlass) {
-            root.style.setProperty(
-              "--liquid-pointer-x",
-              `${liquidPointerRef.current.x.toFixed(2)}%`,
-            );
-            root.style.setProperty(
-              "--liquid-pointer-y",
-              `${liquidPointerRef.current.y.toFixed(2)}%`,
-            );
-            root.style.setProperty(
-              "--liquid-shift-x",
-              `${((liquidPointerRef.current.x - 50) * 0.14).toFixed(2)}px`,
-            );
-            root.style.setProperty(
-              "--liquid-shift-y",
-              `${((liquidPointerRef.current.y - 50) * 0.1).toFixed(2)}px`,
-            );
-            root.style.setProperty(
-              "--liquid-motion-x",
-              `${(motion.x * 6).toFixed(2)}px`,
-            );
-            root.style.setProperty(
-              "--liquid-motion-y",
-              `${(motion.y * 5).toFixed(2)}px`,
-            );
-            root.style.setProperty(
-              "--liquid-motion-energy",
-              motion.energy.toFixed(3),
-            );
-            root.dataset.liquidMotion = motion.energy > 0 ? "active" : "idle";
-          }
-
-          if (activeLiquidSurfaceRef.current !== surface) {
-            const previousSurface = activeLiquidSurfaceRef.current;
-            previousSurface?.removeAttribute("data-liquid-active");
-            previousSurface?.style.setProperty("--liquid-motion-x", "0px");
-            previousSurface?.style.setProperty("--liquid-motion-y", "0px");
-            previousSurface?.style.setProperty("--liquid-motion-energy", "0");
-            surface?.setAttribute("data-liquid-active", "true");
-            activeLiquidSurfaceRef.current = surface;
-          }
-          if (surface) {
-            const bounds = surface.getBoundingClientRect();
-            const localX = Math.max(
-              0,
-              Math.min(
-                100,
-                ((liquidPointerRef.current.clientX - bounds.left) /
-                  Math.max(1, bounds.width)) *
-                  100,
-              ),
-            );
-            const localY = Math.max(
-              0,
-              Math.min(
-                100,
-                ((liquidPointerRef.current.clientY - bounds.top) /
-                  Math.max(1, bounds.height)) *
-                  100,
-              ),
-            );
-            surface.style.setProperty(
-              "--liquid-local-x",
-              `${localX.toFixed(2)}%`,
-            );
-            surface.style.setProperty(
-              "--liquid-local-y",
-              `${localY.toFixed(2)}%`,
-            );
-            surface.style.setProperty(
-              "--liquid-local-shift-x",
-              `${((localX - 50) * 0.08).toFixed(2)}px`,
-            );
-            surface.style.setProperty(
-              "--liquid-local-shift-y",
-              `${((localY - 50) * 0.06).toFixed(2)}px`,
-            );
-            surface.style.setProperty(
-              "--liquid-motion-x",
-              `${(motion.x * 6).toFixed(2)}px`,
-            );
-            surface.style.setProperty(
-              "--liquid-motion-y",
-              `${(motion.y * 5).toFixed(2)}px`,
-            );
-            surface.style.setProperty(
-              "--liquid-motion-energy",
-              motion.energy.toFixed(3),
-            );
-          }
-
-          if (liquidMotionResetTimerRef.current !== null) {
-            window.clearTimeout(liquidMotionResetTimerRef.current);
-          }
-          if (surface) {
-            const movingSurface = surface;
-            liquidMotionResetTimerRef.current = window.setTimeout(() => {
-              root.style.setProperty("--liquid-motion-x", "0px");
-              root.style.setProperty("--liquid-motion-y", "0px");
-              root.style.setProperty("--liquid-motion-energy", "0");
-              root.dataset.liquidMotion = "idle";
-              movingSurface?.style.setProperty("--liquid-motion-x", "0px");
-              movingSurface?.style.setProperty("--liquid-motion-y", "0px");
-              movingSurface?.style.setProperty("--liquid-motion-energy", "0");
-              liquidMotionResetTimerRef.current = null;
-            }, 72);
-          } else {
-            root.style.setProperty("--liquid-motion-x", "0px");
-            root.style.setProperty("--liquid-motion-y", "0px");
-            root.style.setProperty("--liquid-motion-energy", "0");
-            root.dataset.liquidMotion = "idle";
-          }
-          liquidPointerFrameRef.current = null;
-        });
-      }}
+      onPointerMove={liquidGlassPointer.onPointerMove}
       onContextMenu={(event) => {
         const target = event.target;
         if (
@@ -1972,7 +1521,7 @@ export default function DesktopShellPage() {
         enabled={
           liquidGlassStyle === "crystal" && liquidGlassUsesNativeDefaults
         }
-        wallpaper={wallpaperVariant}
+        wallpaper={wallpaper}
       />
       <MacLiquidGlassWebGL />
       <div aria-hidden className="mac-liquid-atmosphere">
@@ -1983,17 +1532,12 @@ export default function DesktopShellPage() {
       <section className="relative z-10 flex h-full min-h-0 flex-col">
         <MacMenuBar
           modelStatus={
-            <div className="flex items-center gap-2">
-              <AiNetworkPulse
-                onOpenWorkbench={() =>
-                  openApp(DESKTOP_WORKBENCH_APP, taskWorkspaceRoute({}))
-                }
-                onOpenSettings={() => openSystemAgentSettings("models")}
-              />
-              <SystemModelStatus
-                onOpenSettings={() => openSystemAgentSettings("models")}
-              />
-            </div>
+            <AiNetworkPulse
+              onOpenWorkbench={() =>
+                openApp(DESKTOP_WORKBENCH_APP, taskWorkspaceRoute({}))
+              }
+              onOpenSettings={() => openSystemAgentSettings("models")}
+            />
           }
           activeApp={menuBarActiveApp}
           controlCenterOpen={controlCenterOpen}
@@ -2002,7 +1546,8 @@ export default function DesktopShellPage() {
           onOpenSpotlight={openSpotlight}
           onToggleControlCenter={toggleControlCenter}
           onToggleNotifications={toggleNotifications}
-          onToggleLiquidGlass={toggleLiquidGlass}
+          desktopTheme={desktopTheme}
+          onToggleTheme={handleToggleDesktopTheme}
           onOpenAbout={() => setAboutOpen(true)}
           onOpenFiles={openFinder}
           onOpenSettings={openSystemSettings}
@@ -2014,9 +1559,49 @@ export default function DesktopShellPage() {
           onLockScreen={lockScreen}
           onSystemAction={requestSystemAction}
           notificationCount={nativeNotifications.length}
+          centerContent={
+            <MacWorkspaceDropdown
+              desktopMode={desktopMode}
+              onToggleMode={() => {
+                setDesktopMode((prev) => {
+                  const next = prev === "pure" ? "workspace" : "pure";
+                  toast.info(
+                    next === "pure"
+                      ? "已进入纯净意图态 (已退散工作区窗口)"
+                      : "已恢复多窗口工作台",
+                    {
+                      description:
+                        next === "pure"
+                          ? "点击空白壁纸或按空格键可随时恢复窗口"
+                          : "点击空白壁纸或按空格键可返回纯净意图态",
+                    },
+                  );
+                  return next;
+                });
+              }}
+              activeRoom={desktopActiveRoom}
+              onSelectRoom={(room) => {
+                setDesktopActiveRoom(room);
+                if (desktopMode === "pure") {
+                  setDesktopMode("workspace");
+                }
+                const roomInfo = OPEN_ROOMS.find((r) => r.id === room);
+                toast.info(`已进入协作空间：${roomInfo?.title || room}`, {
+                  description: `${roomInfo?.agentLabel || ""} · ${roomInfo?.desc || ""}`,
+                });
+              }}
+            />
+          }
         />
         <div className="relative min-h-0 flex-1 pt-[25px]">
           <IntentDesktopSurface
+            mode={desktopMode}
+            onModeChange={setDesktopMode}
+            theme={desktopTheme}
+            onThemeChange={handleSelectDesktopTheme}
+            activeRoom={desktopActiveRoom}
+            onActiveRoomChange={setDesktopActiveRoom}
+            hideTopControlBar={true}
             onOpenWorkbench={(prompt) =>
               openApp(DESKTOP_WORKBENCH_APP, taskWorkspaceRoute({ prompt }))
             }
@@ -2366,7 +1951,7 @@ export default function DesktopShellPage() {
             <button type="button" onClick={cycleWallpaper}>
               更改墙纸…
             </button>
-            <button type="button" onClick={() => setLiquidGlassOpen(true)}>
+            <button type="button" onClick={openLiquidGlass}>
               流光玻璃…
               <span>{liquidGlassStyle === "crystal" ? "晶透" : "柔光"}</span>
             </button>
@@ -2458,17 +2043,6 @@ export default function DesktopShellPage() {
                 归档到分类
               </button>
             )}
-            <div className="my-1 h-px bg-slate-200" />
-            <button
-              type="button"
-              onClick={() =>
-                handleContextMenuAction("delete", contextMenu.item)
-              }
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
-            >
-              <Trash2Icon className="size-3.5" />
-              删除
-            </button>
           </div>
         )}
 
@@ -2631,7 +2205,7 @@ export default function DesktopShellPage() {
           <DockItem onClick={() => toast.info("废纸篓为空")} title="废纸篓">
             <MacAppIcon
               icon={Trash2Icon}
-              gradient="linear-gradient(145deg, #f9fbfc, #aeb9c7)"
+              gradient="linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.05))"
               appId="system:trash"
             />
           </DockItem>
@@ -2836,19 +2410,28 @@ export default function DesktopShellPage() {
         />
       )}
 
-      {windows
-        .filter((win) => !minimized.has(win.id))
-        .map((win, i) => (
-          <AppWindow
-            key={win.id}
-            win={win}
-            index={i}
-            focused={focusedWin === win.id}
-            onFocus={() => focusWindow(win.id)}
-            onClose={() => closeWindow(win.id)}
-            onMinimize={() => minimizeWindow(win.id)}
-          />
-        ))}
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-0 z-40 transition-all duration-500",
+          desktopMode === "pure"
+            ? "pointer-events-none scale-95 opacity-0"
+            : "pointer-events-none scale-100 opacity-100 [&>*]:pointer-events-auto",
+        )}
+      >
+        {windows
+          .filter((win) => !minimized.has(win.id))
+          .map((win, i) => (
+            <AppWindow
+              key={win.id}
+              win={win}
+              index={i}
+              focused={focusedWin === win.id}
+              onFocus={() => focusWindow(win.id)}
+              onClose={() => closeWindow(win.id)}
+              onMinimize={() => minimizeWindow(win.id)}
+            />
+          ))}
+      </div>
 
       {/* System-owned surfaces are siblings of application windows so their
           z-index is not trapped inside the desktop-content stacking context. */}
@@ -2893,6 +2476,7 @@ export default function DesktopShellPage() {
         open={controlCenterOpen}
         onClose={() => setControlCenterOpen(false)}
         onOpenSettings={openSystemSettings}
+        onOpenLiquidGlass={openLiquidGlass}
         systemControls={systemControls}
         onSetWifiEnabled={(enabled) =>
           applySystemControl("Wi-Fi", () =>
@@ -2920,10 +2504,12 @@ export default function DesktopShellPage() {
         style={liquidGlassStyle}
         intensity={liquidGlassIntensity}
         tuning={liquidGlassTuning}
-        onStyleChange={updateLiquidGlassStyle}
-        onIntensityChange={updateLiquidGlassIntensity}
-        onTuningChange={updateLiquidGlassTuning}
-        onResetTuning={resetLiquidGlassTuning}
+        desktopTheme={desktopTheme}
+        onDesktopThemeChange={handleSelectDesktopTheme}
+        onStyleChange={setLiquidGlassStyle}
+        onIntensityChange={setLiquidGlassIntensity}
+        onTuningChange={patchLiquidGlassTuning}
+        onResetTuning={resetLiquidGlass}
         onClose={() => setLiquidGlassOpen(false)}
       />
       <MacNotificationCenter
@@ -2961,7 +2547,7 @@ export default function DesktopShellPage() {
           initialAgentSection={agentSettingsSection}
           systemDeviceSettings={{
             controls: systemControls,
-            wallpaper: wallpaperVariant,
+            wallpaper: wallpaper,
             notificationCount: nativeNotifications.length,
             notificationServiceAvailable,
             updateCapabilities: systemUpdateCapabilities,
@@ -2984,7 +2570,7 @@ export default function DesktopShellPage() {
               applySystemControl("显示器亮度", () =>
                 window.echo!.systemControls!.setDisplayBrightness(percentage),
               ),
-            onWallpaperChange: updateWallpaper,
+            onWallpaperChange: setWallpaper,
             onOpenNotifications: () => {
               setAccountSecurityOpen(false);
               setNotificationsOpen(true);
