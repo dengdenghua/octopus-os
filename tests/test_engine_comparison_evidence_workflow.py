@@ -176,8 +176,16 @@ def test_real_linux_attack_suite_precedes_service_and_is_provenance_bound() -> N
 
 def test_protected_runtime_inputs_are_rechecked_without_publishing_auth_identity() -> None:
     job = _job()
-    baseline = job["env"]["ECHO_PROTECTED_IDENTITY_BASELINE"]
-    assert baseline.startswith("${{ runner.temp }}/echo-protected-identities-")
+    # 路径必须在 step 内解析后写入 GITHUB_ENV:job 级 env 不解析 runner 上下文
+    # (GitHub 只放行 github/inputs/matrix/needs/secrets/strategy/vars),直接写
+    # ${{ runner.temp }} 会被求值为空串,基线路径退化成文件系统根目录。
+    resolved = _step("Resolve run-scoped paths")["run"]
+    assert (
+        'baseline_root="${RUNNER_TEMP}/echo-protected-identities-'
+        '${{ github.run_id }}-${{ github.run_attempt }}"'
+    ) in resolved
+    assert "ECHO_PROTECTED_IDENTITY_BASELINE=${baseline_root}" in resolved
+    assert "ECHO_PROTECTED_IDENTITY_BASELINE" not in job["env"]
     preflight = _step("Fail closed unless protected runner identities are complete")["run"]
     for value in (
         "ECHO_EVAL_CONFIG",

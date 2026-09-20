@@ -77,7 +77,14 @@ def _steps(workflow: dict[str, object]) -> list[dict[str, object]]:
 
 def test_workflow_linter_is_checksum_pinned_and_knows_the_dedicated_runner() -> None:
     config = yaml.safe_load(ACTIONLINT_CONFIG.read_text(encoding="utf-8"))
-    assert config == {"self-hosted-runner": {"labels": ["echo-os-image"]}}
+    # 三个自托管标签缺一不可:echo-os-image 供镜像流水线,behavioral-evidence 与
+    # hardened-verifier 供两条证据流水线。漏登记任何一个,actionlint 都会把对应
+    # runs-on 判为 unknown,让 workflow-contract 这个 job 与代码质量无关地恒红。
+    assert config == {
+        "self-hosted-runner": {
+            "labels": ["echo-os-image", "behavioral-evidence", "hardened-verifier"]
+        }
+    }
 
     workflow = _workflow("ci.yml")
     job = workflow["jobs"]["workflow-contract"]

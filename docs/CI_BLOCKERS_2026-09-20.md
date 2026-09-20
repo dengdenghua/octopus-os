@@ -106,8 +106,8 @@ FAILED tests/test_engine_comparison_evidence_workflow.py::
 | **B. 让 evidence workflow 改用托管 runner** | 换 `runs-on`，并解决 `/Applications/ChatGPT.app/...` 与固化签名身份的依赖 | 语义上这些流程需要专用机，改动面大 |
 | **C. 把 evidence workflow 移出 lint 范围** | actionlint 加忽略规则（如按文件排除） | 掩盖真实缺陷，不推荐；`[expression]` 那条是真 bug |
 
-方案 A 的改动我已实现并验证过（actionlint exit=0），随后为不越权决定契约而回退，
-备份留在 `.workbuddy/wf-backup/`（3 个文件），需要时可直接取回。
+方案 A 的改动已实现并验证（actionlint exit=0），随后曾一度回退以确认测试基线。
+**已确认采用方案 A 并落地，详见 §5。** 回退备份留在 `.workbuddy/wf-backup/`（3 个文件）。
 
 ### 3.5 附带发现：evidence workflow 为何每次 push 都秒挂
 
@@ -123,3 +123,34 @@ FAILED tests/test_engine_comparison_evidence_workflow.py::
 - CI 有两道**与代码质量无关**的阻塞：依赖审计策略未定、workflow contract 契约自相矛盾。
 - 建议优先级：先拆开 audit 阻塞链（低风险、立刻恢复 5 道门禁）→ 再定 workflow
   contract 方向（§3.4）→ 最后手动验证 evidence workflow 能否真正跑起来。
+
+## 五、方案 A 实施记录（2026-09-20）
+
+已按方案 A 落地，共改 5 个文件：
+
+| 文件 | 改动 |
+|---|---|
+| `.github/actionlint.yaml` | 在 `self-hosted-runner.labels` 追加 `behavioral-evidence`、`hardened-verifier` |
+| `.github/workflows/behavioral-evidence.yml` | 从 job 级 env 移除 3 处 `runner.temp`，新增 `Resolve run-scoped paths` step 写入 `GITHUB_ENV` |
+| `.github/workflows/engine-comparison-evidence.yml` | 同上，5 处（含 `ECHO_PROTECTED_IDENTITY_BASELINE`） |
+| `tests/appliance/test_delivery_workflow_policy.py` | 断言由"仅 echo-os-image"更新为三个标签齐全 |
+| `tests/test_engine_comparison_evidence_workflow.py` | 断言由"job env 里 startswith `${{ runner.temp }}`"更新为校验新 step 中的解析，并断言该变量**不再**出现在 job 级 env |
+
+测试契约的**意图未变**，只是把被固化的事实更新为与 actionlint/GitHub 规则一致：
+路径仍绑定 run 唯一的临时目录、actionlint 配置仍须覆盖全部专用 runner。
+
+### 验证
+
+- `actionlint -shellcheck= -pyflakes=`（v1.7.12，与 CI 同版同参）：**exit=0**，10 个错误全清零
+- 两个 workflow 全部 shell 步骤 `bash -n`：13 / 17 步，**0 失败**
+- workflow 相关测试 9 个文件：**1 failed / 128 passed**，与改前基线一致，
+  唯一失败是既有的 `test_launcher_validate_cli_runs_as_an_isolated_absolute_script`
+  （伴 `UnicodeDecodeError` 子进程解码告警，属环境项，与本改动无关）
+
+### 仍待处理（不在本次范围）
+
+- `pnpm audit --prod` 与 `pip-audit` 的阻塞链拆分（§2 建议）尚未实施。
+- evidence workflow 能否在真实 runner 上跑通**尚未验证**——它们此前大概率从未成功
+  执行过（§3.5）。方案 A 修的是"能不能被调度/校验通过"，**不等于**流水线业务逻辑
+  已被验证。建议用 `workflow_dispatch` 手动各触发一次确认。
+

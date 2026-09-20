@@ -42,11 +42,6 @@ jobs:
       ECHO_HARDENED_LAUNCHER_PYTHON_SHA256: ${{ vars.ECHO_HARDENED_LAUNCHER_PYTHON_SHA256 }}
       ECHO_HARDENED_LAUNCHER_MODULE: ${{ vars.ECHO_HARDENED_LAUNCHER_MODULE_PATH }}
       ECHO_HARDENED_LAUNCHER_MODULE_SHA256: ${{ vars.ECHO_HARDENED_LAUNCHER_MODULE_SHA256 }}
-      ECHO_HOME: ${{ runner.temp }}/echo-engine-${{ github.run_id }}-${{ github.run_attempt }}
-      ECHO_DATA_DIR: ${{ runner.temp }}/echo-engine-${{ github.run_id }}-${{ github.run_attempt }}/data
-      ECHO_CODEX_STATE_DIR: ${{ runner.temp }}/echo-engine-${{ github.run_id }}-${{ github.run_attempt }}/codex-state
-      ECHO_EVAL_SERVER_LOG: ${{ runner.temp }}/echo-engine-${{ github.run_id }}-${{ github.run_attempt }}/server.log
-      ECHO_PROTECTED_IDENTITY_BASELINE: ${{ runner.temp }}/echo-protected-identities-${{ github.run_id }}-${{ github.run_attempt }}
       UV_PYTHON_DOWNLOADS: never
 
     steps:
@@ -56,6 +51,23 @@ jobs:
           ref: ${{ inputs.target_sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      # job 级 env 不解析 runner 上下文(GitHub 只放行 github / inputs /
+      # matrix / needs / secrets / strategy / vars),直接写 ${{ runner.temp }}
+      # 会被求值为空串,路径落到文件系统根目录。这里在 step 内解析再写入
+      # GITHUB_ENV,后续步骤继承同一组值。
+      - name: Resolve run-scoped paths
+        run: |
+          set -euo pipefail
+          run_root="${RUNNER_TEMP}/echo-engine-${{ github.run_id }}-${{ github.run_attempt }}"
+          baseline_root="${RUNNER_TEMP}/echo-protected-identities-${{ github.run_id }}-${{ github.run_attempt }}"
+          {
+            echo "ECHO_HOME=${run_root}"
+            echo "ECHO_DATA_DIR=${run_root}/data"
+            echo "ECHO_CODEX_STATE_DIR=${run_root}/codex-state"
+            echo "ECHO_EVAL_SERVER_LOG=${run_root}/server.log"
+            echo "ECHO_PROTECTED_IDENTITY_BASELINE=${baseline_root}"
+          } >> "${GITHUB_ENV}"
 
       - name: Fail closed unless protected runner identities are complete
         env:

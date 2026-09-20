@@ -1,3 +1,7 @@
 self-hosted-runner:
   labels:
     - echo-os-image
+    # 证据流水线专用的两个自托管 runner 池。缺失时 actionlint 会把
+    # runs-on 判为 "label ... is unknown"，直接让 workflow-contract job 失败。
+    - behavioral-evidence
+    - hardened-verifier
